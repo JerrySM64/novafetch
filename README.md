@@ -30,7 +30,7 @@ On the first run, `novafetch` generates a default configuration file at `~/.conf
 The file uses standard TOML syntax. You can disable specific modules, adjust the frame colors, and enable `allow_exec = true` to permit the execution of external commands for accurate package counts and detailed shell version strings.
 
 Example `config.toml`:
-
+```
 # novafetch configuration
 
 # Allow external commands for shell version, git info, packages, etc.
