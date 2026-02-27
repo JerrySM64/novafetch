@@ -31,27 +31,28 @@ The file uses standard TOML syntax. You can disable specific modules, adjust the
 
 Example `config.toml`:
 
-```toml
 # novafetch configuration
 
 # Allow external commands for shell version, git info, packages, etc.
 allow_exec = true
 
-# The order of modules to display.
+# Order of modules to display
 order = [
-    "os", "kernel", "uptime", "os_age", "shell", "spacer",
-    "host", "hostname", "cpu", "gpu", "memory", "spacer",
-    "session", "de_wm", "terminal", "packages", "disks"
+    "os", "kernel", "uptime", "os_age", "shell",
+    "spacer",
+    "host", "hostname", "cpu", "gpu", "memory",
+    "spacer",
+    "session", "de_wm", "terminal", "packages"
 ]
 
-# Overall theme colors (RGB arrays)
-[theme]
-frame_rgb = [100, 100, 100]
-header_rgb = [200, 200, 200]
+[modules]
+# Set to false to disable specific modules
+# os = true
+# os_age = true
 
-# Disable a specific module
-[modules.packages]
-enabled = false
+[theme]
+# frame_rgb = [120, 180, 120]
+# header_rgb = [120, 180, 120]
 ```
 
 ## License
