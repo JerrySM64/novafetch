@@ -2,7 +2,7 @@
 
 A fast, lightweight fetch written in Rust that is aware of your distro.
 
-`novafetch` was built as an alternative to neofetch. It is natively aware of Wayland, performs deep terminal unmasking, and automatically themes its output to match your distribution's brand colors.
+`novafetch` was built as an alternative to fastfetch. It automatically themes its output to match your distribution's brand colors.
 
 ## Features
 
