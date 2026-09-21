@@ -6,11 +6,11 @@ A fast, lightweight fetch written in Rust that is aware of your distro.
 
 ## Features
 
-- 🎨 **Distro colors:** Automatically reads `ANSI_COLOR` from `/etc/os-release` so the OS line perfectly matches your distro's official brand color. Hardcoded fallbacks are included for missing values.
-- 🖥️ **Wayland native:** Connects directly to the Wayland socket to reliably detect standalone compositors (niri, Sway, Hyprland, etc.) rather than relying on brittle environment variables.
-- ⚙️ **Auto-configuration:** Generates a default `config.toml` in your `~/.config/novafetch/` directory, making it easy to toggle rows, adjust colors, and enable external command execution.
-- 📦 **Package counts:** Built-in detection for `rpm`, `dpkg`, `pacman`, `apk`, `xbps`, `flatpak`, and `snap`.
-- 🕹️ **Terminal detection:** Unmasks wrappers like `sudo`, `strace`, and `flatpak`, maps complex process names (e.g., `wezterm-gui` ⭢ `WezTerm`), and checks environment variables to accurately report the actual terminal emulator in use.
+- **Distro colors:** Automatically reads `ANSI_COLOR` from `/etc/os-release` so the OS line perfectly matches your distro's official brand color. Hardcoded fallbacks are included for missing values.
+- **Wayland native:** Connects directly to the Wayland socket to reliably detect standalone compositors (niri, Sway, Hyprland, etc.) rather than relying on brittle environment variables.
+- **Auto-configuration:** Generates a default `config.toml` in your `~/.config/novafetch/` directory, making it easy to toggle rows, adjust colors, and enable external command execution.
+- **Package counts:** Built-in detection for `rpm`, `dpkg`, `pacman`, `apk`, `xbps`, `flatpak`, and `snap`.
+- **Terminal detection:** Unmasks wrappers like `sudo`, `strace`, and `flatpak`, maps complex process names (e.g., `wezterm-gui` ⭢ `WezTerm`), and checks environment variables to accurately report the actual terminal emulator in use.
 
 ## Installation
 
