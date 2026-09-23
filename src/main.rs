@@ -845,6 +845,38 @@ fn module_cpu(info: &HashMap<&'static str,String>) -> Vec<Line> {
     }]
 }
 
+fn counted_from_cmd(bin: &str, args: &[&str], label: &str, skip_header: bool) -> Option<String> {
+    if !cmd_exists(bin) { return None; }
+    let lines = run_cmd_lines(bin, args).ok()?;
+    let mut it = lines.into_iter();
+    if skip_header { it.next(); }
+    let count = it.filter(|l| !l.trim().is_empty()).count();
+    if count > 0 { Some(format!("{count} ({label})")) } else { None }
+}
+
+// AppImages have no central package database, so fall back to counting
+// `*.AppImage` files in the usual install locations.
+fn count_appimages() -> usize {
+    let mut roots = vec![PathBuf::from("/opt")];
+    if let Ok(home) = env::var("HOME") {
+        let home = PathBuf::from(home);
+        roots.push(home.join("Applications"));
+        roots.push(home.join("bin"));
+    }
+
+    let mut count = 0;
+    for root in roots {
+        let Ok(rd) = fs::read_dir(root) else { continue; };
+        for entry in rd.flatten() {
+            if !entry.path().is_file() { continue; }
+            if entry.file_name().to_string_lossy().to_lowercase().ends_with(".appimage") {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 fn module_packages(allow: bool) -> Result<Vec<Line>> {
     if !allow { return Ok(vec![]); }
     let mut parts: Vec<String> = vec![];
@@ -861,75 +893,30 @@ fn module_packages(allow: bool) -> Result<Vec<Line>> {
         if count > 0 { parts.push(format!("{count} (dpkg)")); }
     }
 
-    if cmd_exists("pacman") {
-        if let Ok(lines) = run_cmd_lines("pacman", &["-Qq"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (pacman)")); }
+    // Each source below is evaluated independently so that several package
+    // managers on the same system (e.g. pacman + rpm + flatpak + appimage)
+    // are all reported side by side; none of them short-circuits the others.
+    let managers: [(&str, &[&str], &str, bool); 10] = [
+        ("pacman",     &["-Qq"],                  "pacman",  false),
+        ("rpm",        &["-qa"],                  "rpm",     false),
+        ("xbps-query", &["-l"],                   "xbps",    false),
+        ("qlist",      &["-I"],                   "portage", false),
+        ("eopkg",      &["list-installed", "-q"], "eopkg",   false),
+        ("apk",        &["list", "--installed"],  "apk",     false),
+        ("nix-env",    &["-q"],                   "nix",     false),
+        ("snap",       &["list"],                 "snap",    true),
+        ("flatpak",    &["list"],                 "flatpak", false),
+        ("brew",       &["list", "--formula"],    "brew",    false),
+    ];
+
+    for (bin, args, label, skip_header) in managers {
+        if let Some(part) = counted_from_cmd(bin, args, label, skip_header) {
+            parts.push(part);
         }
     }
 
-    if cmd_exists("rpm") && !cmd_exists("pacman") {
-        if let Ok(lines) = run_cmd_lines("rpm", &["-qa"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (rpm)")); }
-        }
-    }
-
-    if cmd_exists("xbps-query") {
-        if let Ok(lines) = run_cmd_lines("xbps-query", &["-l"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (xbps)")); }
-        }
-    }
-
-    if cmd_exists("qlist") {
-        if let Ok(lines) = run_cmd_lines("qlist", &["-I"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (portage)")); }
-        }
-    }
-
-    if cmd_exists("eopkg") {
-        if let Ok(lines) = run_cmd_lines("eopkg", &["list-installed", "-q"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (eopkg)")); }
-        }
-    }
-
-    if cmd_exists("apk") {
-        if let Ok(lines) = run_cmd_lines("apk", &["list", "--installed"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (apk)")); }
-        }
-    }
-
-    if cmd_exists("nix-env") {
-        if let Ok(lines) = run_cmd_lines("nix-env", &["-q"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (nix)")); }
-        }
-    }
-
-    if cmd_exists("snap") {
-        if let Ok(lines) = run_cmd_lines("snap", &["list"]) {
-            let count = lines.iter().skip(1).filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (snap)")); }
-        }
-    }
-
-    if cmd_exists("flatpak") {
-        if let Ok(lines) = run_cmd_lines("flatpak", &["list"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (flatpak)")); }
-        }
-    }
-
-    if cmd_exists("brew") {
-        if let Ok(lines) = run_cmd_lines("brew", &["list", "--formula"]) {
-            let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
-            if count > 0 { parts.push(format!("{count} (brew)")); }
-        }
-    }
+    let appimages = count_appimages();
+    if appimages > 0 { parts.push(format!("{appimages} (appimage)")); }
 
     Ok(if parts.is_empty() {
         vec![]
