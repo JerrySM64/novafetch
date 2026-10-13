@@ -882,6 +882,28 @@ fn count_appimages() -> usize {
     count
 }
 
+fn count_nixpkgs() -> Option<String> {
+    if !Path::new("/run/current-system").exists() {
+        return None;
+    }
+
+    if let Ok(lines) = run_cmd_lines("nix-store", &["-q", "--requisites", "/run/current-system"]) {
+        let count = lines.iter().filter(|l| !l.trim().is_empty()).count();
+        if count > 0 {
+            return Some(format!("{count} (nixpkgs)"));
+        }
+    }
+
+    if let Ok(rd) = fs::read_dir("/run/current-system/sw/bin") {
+        let count = rd.flatten().count();
+        if count > 0 {
+            return Some(format!("{count} (nixpkgs)"));
+        }
+    }
+
+    None
+}
+
 fn module_packages(allow: bool) -> Result<Vec<Line>> {
     if !allow { return Ok(vec![]); }
     let mut parts: Vec<String> = vec![];
@@ -898,9 +920,6 @@ fn module_packages(allow: bool) -> Result<Vec<Line>> {
         if count > 0 { parts.push(format!("{count} (dpkg)")); }
     }
 
-    // Each source below is evaluated independently so that several package
-    // managers on the same system (e.g. pacman + rpm + flatpak + appimage)
-    // are all reported side by side; none of them short-circuits the others.
     let managers: [(&str, &[&str], &str, bool); 10] = [
         ("pacman",     &["-Qq"],                  "pacman",  false),
         ("rpm",        &["-qa"],                  "rpm",     false),
@@ -918,6 +937,10 @@ fn module_packages(allow: bool) -> Result<Vec<Line>> {
         if let Some(part) = counted_from_cmd(bin, args, label, skip_header) {
             parts.push(part);
         }
+    }
+
+    if let Some(part) = count_nixpkgs() {
+        parts.push(part);
     }
 
     let appimages = count_appimages();
@@ -1045,26 +1068,51 @@ fn shorten_gpu_name_vendor_aware(raw: &str) -> String {
     }
 }
 
-fn module_gpu(allow: bool) -> Result<Vec<Line>> {
-    if !allow || !cmd_exists("lspci") { return Ok(vec![]); }
+fn sysfs_gpu_pretty_name(vendor_id: u16, device_id: u16, driver: &str) -> String {
+    let id = format!("{vendor_id:04X}:{device_id:04X}");
+    match vendor_id {
+        0x1002 => format!("AMD Radeon ({id})"),
+        0x10DE => format!("NVIDIA GeForce ({id})"),
+        0x8086 => format!("Intel Graphics ({id})"),
+        _ => {
+            let base = if driver.is_empty() { "GPU" } else { driver };
+            format!("{base} ({id})")
+        }
+    }
+}
 
+fn module_gpu_sysfs() -> Vec<Line> {
     let mut out = vec![];
-    for l in run_cmd_lines("lspci", &["-D"])? {
-        let ll = l.to_lowercase();
-        if !(ll.contains("vga compatible controller") || ll.contains("3d controller") || ll.contains("display controller")) {
+    let Ok(rd) = fs::read_dir("/sys/bus/pci/devices") else { return out; };
+
+    for entry in rd.flatten() {
+        let addr = entry.file_name().to_string_lossy().to_string();
+        let Ok(uevent) = fs::read_to_string(entry.path().join("uevent")) else { continue; };
+        let map = parse_os_release(&uevent);
+        let is_display = map
+            .get("PCI_CLASS")
+            .and_then(|c| u32::from_str_radix(c, 16).ok())
+            .is_some_and(|c| (c >> 16) & 0xFF == 0x03);
+        if !is_display {
             continue;
         }
 
-        let (addr, rest) = match l.split_once(' ') {
-            Some(x) => x,
-            None => continue,
+        let pci_id = map
+            .get("PCI_ID")
+            .or_else(|| map.get("PCI_SUBSYS_ID"))
+            .map(String::as_str)
+            .unwrap_or("");
+        let Some((vendor_s, device_s)) = pci_id.split_once(':') else { continue; };
+        let (Ok(vendor_id), Ok(device_id)) = (
+            u16::from_str_radix(vendor_s, 16),
+            u16::from_str_radix(device_s, 16),
+        ) else {
+            continue;
         };
 
-        let name_raw = rest.split_once(": ").map(|(_, b)| b).unwrap_or(rest);
-        let pretty = shorten_gpu_name_vendor_aware(name_raw);
-
-        let kind = gpu_kind(addr);
-        let kind = if Path::new(&format!("/sys/bus/pci/devices/{addr}")).exists() { kind } else { "Unknown" };
+        let driver = map.get("DRIVER").map(String::as_str).unwrap_or("");
+        let pretty = sysfs_gpu_pretty_name(vendor_id, device_id, driver);
+        let kind = gpu_kind(&addr);
 
         out.push(Line {
             module: "gpu",
@@ -1075,7 +1123,48 @@ fn module_gpu(allow: bool) -> Result<Vec<Line>> {
             val_rgb: None,
         });
     }
-    Ok(out)
+
+    out
+}
+
+fn module_gpu(allow: bool) -> Result<Vec<Line>> {
+    if allow && cmd_exists("lspci") {
+        let mut out = vec![];
+        if let Ok(lines) = run_cmd_lines("lspci", &["-D"]) {
+            for l in lines {
+                let ll = l.to_lowercase();
+                if !(ll.contains("vga compatible controller") || ll.contains("3d controller") || ll.contains("display controller")) {
+                    continue;
+                }
+
+                let (addr, rest) = match l.split_once(' ') {
+                    Some(x) => x,
+                    None => continue,
+                };
+
+                let name_raw = rest.split_once(": ").map(|(_, b)| b).unwrap_or(rest);
+                let pretty = shorten_gpu_name_vendor_aware(name_raw);
+
+                let kind = gpu_kind(addr);
+                let kind = if Path::new(&format!("/sys/bus/pci/devices/{addr}")).exists() { kind } else { "Unknown" };
+
+                out.push(Line {
+                    module: "gpu",
+                    icon: icon_for("gpu", "GPU"),
+                    icon_rgb: module_color("gpu"),
+                    key: "GPU",
+                    value: format!("{pretty} [{kind}]"),
+                    val_rgb: None,
+                });
+            }
+        }
+
+        if !out.is_empty() {
+            return Ok(out);
+        }
+    }
+
+    Ok(module_gpu_sysfs())
 }
 
 fn main() -> Result<()> {
@@ -1089,8 +1178,6 @@ fn main() -> Result<()> {
         .and_then(|t| t.frame_rgb)
         .map(|v| (v[0], v[1], v[2]))
         .unwrap_or_else(distro_brand_rgb);
-    // The header text and the separator line beneath it inherit the frame
-    // color so the whole frame stays visually consistent.
     let header = fg(frame_rgb);
 
     let name = cfg
