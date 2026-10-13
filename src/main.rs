@@ -113,7 +113,7 @@ impl Default for Config {
             name: None,
             allow_exec: Some(true),
             order: Some(vec![
-                "os","kernel","uptime","os_age","shell",
+                "os","kernel","uptime","os_age","generation","shell",
                 "spacer",
                 "host","hostname","cpu","gpu","memory",
                 "spacer",
@@ -152,7 +152,7 @@ allow_exec = true
 
 # Order of modules to display
 order = [
-    "os", "kernel", "uptime", "os_age", "shell",
+    "os", "kernel", "uptime", "os_age", "generation", "shell",
     "spacer",
     "host", "hostname", "cpu", "gpu", "memory",
     "spacer",
@@ -198,6 +198,8 @@ fn icon_for(module: &str, key: &str) -> &'static str {
         "memory" => "󰍛",
         "terminal" => "",
         "packages" => "󰏖",
+
+        "generation" => "",
 
         "de_wm" => match key {
             "DE" => "󰕮",
@@ -435,6 +437,7 @@ fn module_color(module: &str) -> (u8, u8, u8) {
         "kernel"   => (255, 165,  60), // warm amber
         "uptime"   => (160, 120, 255), // soft violet
         "os_age"   => (255, 200,  80), // warm gold
+        "generation" => (255, 130, 190), // pink
         "shell"    => ( 80, 200, 160), // teal-green
         "cpu"      => (255,  80,  80), // vivid red
         "gpu"      => (255, 140,  80), // coral/orange
@@ -586,6 +589,45 @@ fn module_os_age() -> Result<Vec<Line>> {
         icon_rgb: module_color("os_age"),
         key: "OS Age",
         value: parts.join(" "),
+        val_rgb: None,
+    }])
+}
+
+fn nixos_gens() -> Result<Vec<Line>> {
+    let is_nixos = Path::new("/run/current-system").exists()
+        || fs::read_to_string("/etc/os-release")
+            .map(|s| {
+                let map = parse_os_release(&s);
+                ["ID", "ID_LIKE"]
+                    .iter()
+                    .filter_map(|k| map.get(*k))
+                    .any(|v| v.to_lowercase().contains("nix"))
+            })
+            .unwrap_or(false);
+    if !is_nixos {
+        return Ok(vec![]);
+    }
+
+    let Ok(target) = fs::read_link("/nix/var/nix/profiles/system") else {
+        return Ok(vec![]);
+    };
+    let generation = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix("system-"))
+        .and_then(|n| n.strip_suffix("-link"))
+        .and_then(|n| n.parse::<u64>().ok());
+
+    let Some(generation) = generation else {
+        return Ok(vec![]);
+    };
+
+    Ok(vec![Line {
+        module: "generation",
+        icon: icon_for("generation", "Generation"),
+        icon_rgb: module_color("generation"),
+        key: "Generation",
+        value: generation.to_string(),
         val_rgb: None,
     }])
 }
@@ -859,8 +901,6 @@ fn counted_from_cmd(bin: &str, args: &[&str], label: &str, skip_header: bool) ->
     if count > 0 { Some(format!("{count} ({label})")) } else { None }
 }
 
-// AppImages have no central package database, so fall back to counting
-// `*.AppImage` files in the usual install locations.
 fn count_appimages() -> usize {
     let mut roots = vec![PathBuf::from("/opt")];
     if let Ok(home) = env::var("HOME") {
@@ -1212,6 +1252,7 @@ fn main() -> Result<()> {
             "kernel" => module_simple("kernel", "Kernel", &info, "Kernel"),
             "uptime" => module_simple("uptime", "Uptime", &info, "Uptime"),
             "os_age" => module_os_age()?,
+            "generation" => nixos_gens()?,
             "shell" => module_shell(allow_exec),
 
             "host" => module_host_model(&info),

@@ -41,7 +41,7 @@ allow_exec = true
 
 # Order of modules to display
 order = [
-    "os", "kernel", "uptime", "os_age", "shell",
+    "os", "kernel", "uptime", "os_age", "generation", "shell",
     "spacer",
     "host", "hostname", "cpu", "gpu", "memory",
     "spacer",
