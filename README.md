@@ -27,11 +27,14 @@ sudo cp target/release/novafetch /usr/local/bin/
 
 On the first run, `novafetch` generates a default configuration file at `~/.config/novafetch/config.toml`.
 
-The file uses standard TOML syntax. You can disable specific modules, adjust the frame colors, and enable `allow_exec = true` to permit the execution of external commands for accurate package counts and detailed shell version strings.
+The file uses standard TOML syntax. You can set the header name, recolor the frame with `[theme] frame_rgb` (the header text and separator inherit it), disable specific modules, and enable `allow_exec = true` to permit the execution of external commands for accurate package counts and detailed shell version strings.
 
 Example `config.toml`:
 ```
 # novafetch configuration
+
+# Name shown in the header. Defaults to the $USER environment variable.
+# name = "jerry"
 
 # Allow external commands for shell version, git info, packages, etc.
 allow_exec = true
@@ -51,8 +54,9 @@ order = [
 # os_age = true
 
 [theme]
+# RGB color for the outer border, header, and separator.
+# Defaults to the distro's brand color.
 # frame_rgb = [120, 180, 120]
-# header_rgb = [120, 180, 120]
 ```
 
 ## License

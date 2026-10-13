@@ -88,7 +88,6 @@ struct Line {
 #[derive(Debug, Deserialize, Default, Clone)]
 struct ThemeCfg {
     frame_rgb: Option<[u8; 3]>,
-    header_rgb: Option<[u8; 3]>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -100,6 +99,7 @@ struct ModuleColorCfg {
 
 #[derive(Debug, Deserialize)]
 struct Config {
+    name: Option<String>,
     allow_exec: Option<bool>,
     order: Option<Vec<String>>,
     modules: Option<HashMap<String, bool>>,
@@ -110,6 +110,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            name: None,
             allow_exec: Some(true),
             order: Some(vec![
                 "os","kernel","uptime","os_age","shell",
@@ -119,7 +120,7 @@ impl Default for Config {
                 "session","de_wm","terminal","packages",
             ].into_iter().map(String::from).collect()),
             modules: Some(HashMap::new()),
-            theme: Some(ThemeCfg { frame_rgb: None, header_rgb: None }),
+            theme: Some(ThemeCfg { frame_rgb: None }),
             colors: Some(HashMap::new()),
         }
     }
@@ -141,7 +142,10 @@ fn load_config() -> Config {
     }
 
     if let Some(p) = config_path {
-        let toml_str = r#"# novafetch configuration
+        let toml_str = r##"# novafetch configuration
+
+# Name shown in the header. Defaults to the $USER environment variable.
+# name = "jerry"
 
 # Allow external commands for shell version, git info, packages, etc.
 allow_exec = true
@@ -161,9 +165,10 @@ order = [
 # os_age = true
 
 [theme]
+# RGB color for the outer border, header, and separator.
+# Defaults to the distro's brand color.
 # frame_rgb = [120, 180, 120]
-# header_rgb = [120, 180, 120]
-"#;
+"##;
         if let Some(parent) = p.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -1078,14 +1083,27 @@ fn main() -> Result<()> {
     let allow_exec = cfg.allow_exec.unwrap_or(true);
     let info = gather_linux_base()?;
 
-    let frame_rgb = cfg.theme.as_ref().and_then(|t| t.frame_rgb).map(|v|(v[0],v[1],v[2])).unwrap_or((120,180,120));
-    let header_rgb = cfg.theme.as_ref().and_then(|t| t.header_rgb).map(|v|(v[0],v[1],v[2])).unwrap_or((120,180,120));
-    let header = fg(header_rgb);
+    let frame_rgb = cfg
+        .theme
+        .as_ref()
+        .and_then(|t| t.frame_rgb)
+        .map(|v| (v[0], v[1], v[2]))
+        .unwrap_or_else(distro_brand_rgb);
+    // The header text and the separator line beneath it inherit the frame
+    // color so the whole frame stays visually consistent.
+    let header = fg(frame_rgb);
 
-    let user = env::var("USER").unwrap_or_else(|_| "user".into());
+    let name = cfg
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(String::from)
+        .or_else(|| env::var("USER").ok())
+        .unwrap_or_else(|| "user".into());
 
     let mut lines = vec![
-        format!("{}{}Hello, {}!{}", bold(), header, user, RESET),
+        format!("{}{}Hello, {}!{}", bold(), header, name, RESET),
         String::new(),
     ];
 
